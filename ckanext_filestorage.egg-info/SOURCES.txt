@@ -1,0 +1,17 @@
+LICENSE
+MANIFEST.in
+README.rst
+requirements.txt
+setup.cfg
+setup.py
+ckanext/__init__.py
+ckanext/filestorage/__init__.py
+ckanext/filestorage/plugin.py
+ckanext/filestorage/tests/__init__.py
+ckanext/filestorage/tests/test_plugin.py
+ckanext_filestorage.egg-info/PKG-INFO
+ckanext_filestorage.egg-info/SOURCES.txt
+ckanext_filestorage.egg-info/dependency_links.txt
+ckanext_filestorage.egg-info/entry_points.txt
+ckanext_filestorage.egg-info/namespace_packages.txt
+ckanext_filestorage.egg-info/top_level.txt
