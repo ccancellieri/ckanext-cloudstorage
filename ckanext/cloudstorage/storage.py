@@ -312,6 +312,8 @@ class ResourceCloudStorage(CloudStorage):
         :param filename: The unmunged resource filename.
         """
         return os.path.join(
+            'packages',
+            self.package.id,
             'resources',
             rid,
             munge.munge_filename(filename)
