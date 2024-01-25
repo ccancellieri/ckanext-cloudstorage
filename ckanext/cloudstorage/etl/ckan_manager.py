@@ -277,6 +277,32 @@ class CKANManager:
         if not os.path.exists(directory):
             os.makedirs(directory)
 
+    def check_resource_directories(self, base_path, resource_id):
+        """
+        Check if specific subdirectories based on a resource ID exist in the base path.
+
+        :param base_path: The base directory path.
+        :param resource_id: The resource ID to create the subdirectory paths.
+        """
+        if len(resource_id) < 6:
+            log.error("Resource ID is too short.")
+            return
+
+        first_dir = resource_id[:3]
+        second_dir = resource_id[3:6]
+
+        first_path = os.path.join(base_path, first_dir)
+        second_path = os.path.join(first_path, second_dir)
+
+        if not os.path.isdir(first_path):
+            log.error("Directory does not exist: {}".format(first_path))
+        elif not os.path.isdir(second_path):
+            log.error("Directory does not exist: {}".format(second_path))
+        else:
+            log.info("Both directories exist: {}, {}".format(first_path, second_path))
+            return True
+        return False
+
     def delete_file(self, file_path):
         """
         Deletes a file from the given file path.
@@ -320,29 +346,38 @@ class CKANManager:
 
                             file_path = os.path.join(download_dir, file_name)
                             log.info("file_path: {}".format(file_path))
-                            # TODO
-                            # Using that here is not necessary since we already have the complete url
-                            # of the resource. Therefore, using url_for_static_or_external isn't necessary in this case. 
-                            # This function is more suited for scenarios where you need to generate a URL based on 
-                            # some internal CKAN path or external base URL.
 
                             if url.startswith(CKAN_BASE_URL):
-                                success = self.download_file(url, file_path)
-                                if success:
-                                    log.info("Downloaded {} to {}".format(file_name, file_path))
-                                    prefix = "fao-catalog-"
-                                    bucket_name = prefix + organization
-                                    destination_blob_name = os.path.join(
-                                        'packages',
-                                        package_id,
-                                        'resources',
-                                        resource_id,
-                                        file_name
-                                    )
-                                    # upload file to bucket
-                                    upload_to_gcp(bucket_name, destination_blob_name, file_path)
-                                    self.delete_file(file_path)
+                                base_resource_dir= "/var/lib/ckan/resources/"
+                                prefix = "fao-catalog-"
+                                bucket_name = prefix + organization
+                                destination_blob_name = os.path.join(
+                                    'packages',
+                                    package_id,
+                                    'resources',
+                                    resource_id,
+                                    file_name
+                                )
+                                if self.check_resource_directories(base_resource_dir, resource_id) is False:
+                                    success = self.download_file(url, file_path)
+                                    if success:
+                                        log.info("Downloaded {} to {}".format(file_name, file_path))
+                                        # upload file to bucket
+                                        upload_to_gcp(bucket_name, destination_blob_name, file_path)
+                                        self.delete_file(file_path)
+                                    else:
+                                        log.error("Failed to download {}".format(url))
                                 else:
-                                    log.error("Failed to download {}".format(url))
+                                    # build full path resource on file system
+                                    first_dir = resource_id[:3]
+                                    second_dir = resource_id[3:6]
+                                    resource = resource_id[6:]
+                                    first_path = os.path.join(base_resource_dir, first_dir)
+                                    second_path = os.path.join(first_path, second_dir)
+                                    full_resource_path = os.path.join(second_path, resource)
+                                    log.info("the full resource path on file system: {}".format(full_resource_path))
+                                    # upload file to bucket
+                                    upload_to_gcp(bucket_name, destination_blob_name, full_resource_path)
+
                             else:
                                 log.warning('Skipping external URL: {}'.format(url))
