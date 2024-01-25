@@ -3,7 +3,7 @@ import logging
 import json
 import os
 
-from constants import CKAN_BASE_URL
+from constants import CKAN_BASE_URL, STORAGE_DIR
 
 
 # Logging Configuration
@@ -348,7 +348,7 @@ class CKANManager:
                             log.info("file_path: {}".format(file_path))
 
                             if url.startswith(CKAN_BASE_URL):
-                                base_resource_dir= "/var/lib/ckan/resources/"
+                                base_resource_dir= "{}/resources/".format(STORAGE_DIR)
                                 prefix = "fao-catalog-"
                                 bucket_name = prefix + organization
                                 destination_blob_name = os.path.join(

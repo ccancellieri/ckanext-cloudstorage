@@ -63,5 +63,8 @@ log.info("SERVICE_ACCOUNT_KEY_PATH = {}".format(SERVICE_ACCOUNT_KEY_PATH))
 
 GCP_BASE_URL = get_config_value('app:main', 'ckanext.cloudstorage.gcp_base_url', 
                                     "CKAN cloudstorage GCP base URL not defined in production.ini")
+
+STORAGE_DIR = get_config_value('app:main', 'ckan.storage_path', 
+                                    "CKAN storage path not defined in production.ini")
 log.info("GCP_BASE_URL = {}".format(GCP_BASE_URL))
 log.info("="*100)
