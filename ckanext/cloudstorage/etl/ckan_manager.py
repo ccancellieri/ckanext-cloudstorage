@@ -15,6 +15,7 @@ class CKANManager:
         ckan_url (str): URL of the CKAN instance.
         api_key (str): API key for authentication (optional).
     """
+    ORGANIZATION_DETAIL_ENDPOINT = '/api/3/action/organization_show?id='
     ORGANIZATION_USER_MEMBERS_LIST = '/api/3/action/organization_show?id={}&include_users=true'
     ORGANIZATION_LIST_ENDPOINT = '/api/3/action/organization_list'
     ORGANIZATION_DESC_ENDPOINT = '/api/3/action/organization_list?all_fields=true'
@@ -91,6 +92,29 @@ class CKANManager:
             log.error("Failed to retrieve users.")
             return None
 
+    def get_organization_description(self, organization_name):
+        """
+        Retrieves the name and description for a specific organization.
+
+        Args:
+            organization_name (str): The name of the organization to retrieve.
+
+        Returns:
+            dict or None: A dictionary with the organization name as key and its description as value,
+                        or None if the organization is not found or an error occurs.
+        """
+        endpoint = self.ckan_url.rstrip('/') + self.ORGANIZATION_DETAIL_ENDPOINT + organization_name
+        data = self.get_request(endpoint)
+
+        if data and data.get('success'):
+            org = data['result']
+            log.info("Successfully retrieved organization: {}.".format(organization_name))
+            return {org['name']: org['description']}
+        else:
+            log.error("Failed to retrieve organization: {}.".format(organization_name))
+            return None
+
+
     def get_all_organizations(self):
         """
         Retrieve all organizations from the CKAN instance.
@@ -160,6 +184,23 @@ class CKANManager:
                 members = self.get_organization_members(org_name)
                 if members:
                     all_members[org_name] = members
+
+        return all_members
+
+
+    def get_members_for_single_org(self, organziation):
+        """
+        Retrieves all user members with their roles for given organization.
+
+        Returns:
+            dict: A dictionary with organization names as keys and dicts of user members
+                  and their roles as values.
+        """
+        all_members = {}
+
+        members = self.get_organization_members(organziation)
+        if members:
+            all_members[organziation] = members
 
         return all_members
 
