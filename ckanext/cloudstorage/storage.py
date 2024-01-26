@@ -156,6 +156,7 @@ class CloudStorage(object):
         # Are we even using GOOGLE?
         if self.driver_name == 'GOOGLE_STORAGE':
             try:
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.driver_options["secret"]
                 # Yes? Is the 'google-auth' package available?
                 from google.auth import crypt
                 assert crypt

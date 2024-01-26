@@ -23,7 +23,7 @@ class CKANManager:
     PACKAGE_SHOW_ENDPOINT = '/api/3/action/package_show?id={}'
     USER_LIST_ENDPOINT = '/api/3/action/user_list?all_fields=true'
 
-    def __init__(self, ckan_url, ckan_storage_dir, api_key=None):
+    def __init__(self, ckan_url, ckan_storage_dir, api_key=None, prefix=""):
         """
         Initialize the CKANManager with CKAN instance URL and API key.
 
@@ -34,6 +34,7 @@ class CKANManager:
         self.ckan_url = ckan_url
         self.api_key = api_key
         self.ckan_storage_dir = ckan_storage_dir
+        self.prefix = prefix
 
     def get_request(self, url):
         """
@@ -389,8 +390,7 @@ class CKANManager:
                         
                             if url.startswith(self.ckan_url):
                                 base_resource_dir= "{}/resources/".format(self.ckan_storage_dir)
-                                prefix = "fao-catalog-"
-                                bucket_name = prefix + organization
+                                bucket_name = self.prefix + organization
                                 destination_blob_name = os.path.join(
                                     'packages',
                                     package_id,
