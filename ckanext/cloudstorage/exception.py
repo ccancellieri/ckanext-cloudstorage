@@ -70,6 +70,7 @@ class GetMemberGroupCommandError(Exception):
         super(GetMemberGroupCommandError, self).__init__(self.message)
 
 
+
 class GetGroupMembersCommandError(Exception):
     """Exception raised for errors retrieving group info.
 
@@ -80,7 +81,6 @@ class GetGroupMembersCommandError(Exception):
     def __init__(self, message="Error occurred retrieving group info"):
         self.message = message
         super(GetGroupMembersCommandError, self).__init__(self.message)
-
 
 
 class GCPGroupMemberUpdateError(Exception):
