@@ -49,7 +49,7 @@ def create_bucket(bucket_name, cloud_storage=None):
 def check_err_response_from_gcp(response, err_msg):
     if "error" in response:
         log.error("{}: {}".format(err_msg, response))
-        raise Exception("{}: {}".format(err_msg, response.json()))
+        raise Exception(response)
     return response
 
 
@@ -86,7 +86,7 @@ def add_group_iam_permissions(bucket_name, group_email):
     response = check_err_response_from_gcp(
         response, "Error modifying bucket IAM policy")
     log.info("Read and list permissions granted to group {} on bucket {}:  IAM Policy is now:\n{}"
-             .format(group_email, bucket_name, response))
+             .format(group_email, bucket_name, response.json()))
 
 
 def upload_to_gcp_bucket(
