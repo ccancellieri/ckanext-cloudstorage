@@ -49,7 +49,7 @@ def create_bucket(bucket_name, cloud_storage=None):
 def check_err_response_from_gcp(response, err_msg):
     if "error" in response:
         log.error("{}: {}".format(err_msg, response))
-        raise Exception(response["error"])
+        raise Exception("{}: {}".format(err_msg, response.json()))
     return response
 
 
