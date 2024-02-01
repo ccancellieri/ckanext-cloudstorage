@@ -1,7 +1,0 @@
-
-        [ckan.plugins]
-        filestorage=ckanext.filestorage.plugin:FilestoragePlugin
-
-        [babel.extractors]
-        ckan = ckan.lib.extract:extract_ckan
-    

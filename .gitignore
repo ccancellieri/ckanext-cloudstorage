@@ -1,0 +1,8 @@
+*.egg
+*.egg-info
+*.bv
+*.pyc
+build
+__pycache__
+eggs
+*.json
