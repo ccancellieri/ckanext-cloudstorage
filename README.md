@@ -107,9 +107,10 @@ ckanext.cloudstorage.service_account_key_path= {PATH_TO_SECRET_KEY_FILE}
 ckanext.cloudstorage.gcp_base_url= {GCP_BASE_URL}
 ckan.site_url= {SITE_URL}
 ckan.root_path= {ROOT_PATH}
-ckan.storage_path={STORAGE_PATH}
-ckanext.cloudstorage.prefix={PREFIX}
-ckanext.cloudstorage.domain={DOMAIN}
+ckan.storage_path= {STORAGE_PATH}
+ckanext.cloudstorage.prefix= {PREFIX}
+ckanext.cloudstorage.domain= {DOMAIN}
+ckanext.cloudstorage.transition= {TRANSITION}
 ```
 
 from `ckanext-cloudstorage` folder execute this command:
