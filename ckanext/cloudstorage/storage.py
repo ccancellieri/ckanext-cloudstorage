@@ -150,7 +150,15 @@ class CloudStorage(object):
         return p.toolkit.asbool(
             config.get('ckanext.cloudstorage.guess_mimetype', False)
         )
-    
+
+    @property
+    def storage_path(self):
+        """
+        `True` if ckanext-cloudstorage is configured to guess mime types,
+        `False` otherwise.
+        """
+        return config['ckan.storage_path']
+
     @property
     def proxy_download(self):
         """
@@ -720,3 +728,19 @@ class ResourceCloudStorage(CloudStorage):
     @property
     def package(self):
         return model.Package.get(self.resource['package_id'])
+
+    def get_directory(self, id):
+        directory = ""
+        if "resources" in self.storage_path:
+            directory = os.path.join(self.storage_path,
+                                 id[0:3], id[3:6])
+        else:
+            storage_path = self.storage_path +"/resources/"
+            directory = os.path.join(storage_path,
+                                 id[0:3], id[3:6])
+        return directory
+
+    def get_path(self, id):
+        directory = self.get_directory(id)
+        filepath = os.path.join(directory, id[6:])
+        return filepath
