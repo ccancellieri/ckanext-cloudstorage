@@ -5,10 +5,10 @@ import ckan.plugins as plugins
 import ckan.logic as logic
 from pylons import config
 
-from ckanext.cloudstorage.logic.auth.auth import can_create_gcp_group
-from ckanext.cloudstorage.logic.auth.auth import can_delete_gcp_group
-from ckanext.cloudstorage.logic.auth.auth import can_delete_member_from_gcp_group
-from ckanext.cloudstorage.logic.auth.auth import can_create_member_from_gcp_group
+from ckanext.cloudstorage.logic.auth.auth import can_create_ckan_org
+from ckanext.cloudstorage.logic.auth.auth import can_delete_ckan_org
+from ckanext.cloudstorage.logic.auth.auth import can_delete_member_from_ckan_org
+from ckanext.cloudstorage.logic.auth.auth import can_create_member_from_ckan_org
 from ckanext.cloudstorage.group_service import CreateGroupsCommand
 from ckanext.cloudstorage.group_service import DeleteGroupsCommand
 from ckanext.cloudstorage.group_service import AddMemberGroupCommand
@@ -78,7 +78,7 @@ def organization_create(next_auth, context, data_dict):
     log.info("Validated input data: name=%s, description=%s", name, description)
 
     # Authorization check for GCP group workspace creation
-    if not can_create_gcp_group(context['auth_user_obj']):
+    if not can_create_ckan_org(context['auth_user_obj']):
         log.warning("User %s unauthorized to create GCP group workspace", context['auth_user_obj'])
         raise NotAuthorized(_('User not authorized to create an organization or a gcp group workspace.'))
     
@@ -189,7 +189,7 @@ def organization_delete(next_auth, context, data_dict):
     log.info("Prepared to delete GCP group workspace: %s", group_email)
 
     # Check if the user is authorized to delete the GCP group workspace
-    if not can_delete_gcp_group(context['auth_user_obj']):
+    if not can_delete_ckan_org(context['auth_user_obj']):
         log.warning("User %s unauthorized to delete GCP group workspace", context['auth_user_obj'])
         raise NotAuthorized(_('User not authorized to delete an organization or a gcp group workspace.'))
     
@@ -242,8 +242,12 @@ def organization_member_create(next_auth, context, data_dict):
         log.error("Missing 'id' in data_dict")
         raise ValidationError({'id': _('Missing value')})
     org_id = str(data_dict.get("id")).encode('ascii', 'ignore')
-    
-    username = str(context['user']).encode('ascii', 'ignore')
+
+    username = data_dict.get("username")
+    if username is None:
+        log.error("Missing 'unsername' in data_dict")
+        raise ValidationError({'username': _('Missing value')})
+    username = str(data_dict.get("username")).encode('ascii', 'ignore')
 
     log.info("Member data extracted: role=%s, username=%s, org_id=%s", role, username, org_id)
 
@@ -266,7 +270,7 @@ def organization_member_create(next_auth, context, data_dict):
     log.info("GCP group email constructed: %s", group_email)
 
     # Authorization check for creating/updating member in GCP group
-    if not can_create_member_from_gcp_group(context['auth_user_obj'], username, org_id):
+    if not can_create_member_from_ckan_org(context['auth_user_obj'], username, org_id):
         log.warning("User %s unauthorized to create or update a member in GCP group workspace", context['auth_user_obj'])
         raise NotAuthorized(_('User not authorized to create or update a member within gcp group workspace.'))
 
@@ -344,7 +348,7 @@ def organization_member_delete(next_auth, context, data_dict):
     log.info("Prepared member and group emails for deletion: group_email=%s, member_email=%s", group_email, member_email)
 
     # Authorization check for deleting member from GCP group
-    if not can_delete_member_from_gcp_group(context['auth_user_obj'], username, group_id):
+    if not can_delete_member_from_ckan_org(context['auth_user_obj'], username, group_id):
         log.warning("User %s unauthorized to delete a member of GCP group workspace", context['auth_user_obj'])
         raise NotAuthorized(_('User not authorized to delete a member of a gcp group workspace.'))
 
