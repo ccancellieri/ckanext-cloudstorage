@@ -223,46 +223,6 @@ class CloudStorage(object):
         return False
 
 
-    @property
-    def can_use_advanced_azure(self):
-        """
-        `True` if the `azure-storage` module is installed and
-        ckanext-cloudstorage has been configured to use Azure, otherwise
-        `False`.
-        """
-        # Are we even using Azure?
-        if self.driver_name == 'AZURE_BLOBS':
-            try:
-                # Yes? Is the azure-storage package available?
-                from azure import storage
-                # Shut the linter up.
-                assert storage
-                return True
-            except ImportError:
-                pass
-
-        return False
-
-    @property
-    def can_use_advanced_aws(self):
-        """
-        `True` if the `boto` module is installed and ckanext-cloudstorage has
-        been configured to use Amazon S3, otherwise `False`.
-        """
-        # Are we even using AWS?
-        if 'S3' in self.driver_name:
-            try:
-                # Yes? Is the boto package available?
-                import boto
-                # Shut the linter up.
-                assert boto
-                return True
-            except ImportError:
-                pass
-
-        return False
-
-
 class ResourceCloudStorage(CloudStorage):
     def __init__(self, resource):
             """
@@ -440,7 +400,7 @@ class ResourceCloudStorage(CloudStorage):
         try:
             storage_client.get_bucket(bucket_name)
             log.info("Bucket {} exists".format(bucket_name))
-            return False
+            return True
         except NotFound as e:
             log.warning("Bucket {} does not exist: {}".format(bucket_name, e))
             return False
@@ -512,12 +472,13 @@ class ResourceCloudStorage(CloudStorage):
 
         :param id: The resource_id.
         """
-        if self.can_use_advanced_azure and self.transition and self.bucket_exist:
-            self._upload_to_azure(id)
-        elif self.transition and self.bucket_exist:
+        if self.transition:
+            if self.bucket_exist:
+                self._upload_to_libcloud(id)
+            else:
+                self._upload_to_disk(id)
+        else:
             self._upload_to_libcloud(id)
-        elif self.transition and not self.bucket_exist:
-            self._upload_to_disk(id)
 
     def _upload_to_disk(self, id, max_size=10):
         '''Actually upload the file.
@@ -559,42 +520,6 @@ class ResourceCloudStorage(CloudStorage):
                     self.file_upload.close()
             os.rename(tmp_filepath, filepath)
             return
-
-    def _upload_to_azure(self, id):
-        """
-        Uploads a file to Azure blob storage.
-
-        This method uploads the file associated with the given resource ID
-        to Azure Blob Storage, using the configured container and filename.
-        It handles content settings for the file based on its MIME type.
-
-        :param id: The resource_id associated with the file to be uploaded.
-        :return: The response from the Azure blob service after upload.
-        """
-        from azure.storage import blob as azure_blob
-
-        blob_service = azure_blob.BlockBlobService(**self.driver_options)
-        content_settings = self._get_content_settings_for_azure()
-
-        return blob_service.create_blob_from_stream(
-            container_name=self.container_name,
-            blob_name=self.path_from_filename(id, self.filename),
-            stream=self.file_upload,
-            content_settings=content_settings
-        )
-
-    def _get_content_settings_for_azure(self):
-        """
-        Determines the content settings for Azure based on the file's mimetype.
-        """
-        from azure.storage.blob.models import ContentSettings
-
-        content_settings = None
-        if self.guess_mimetype:
-            content_type, _ = mimetypes.guess_type(self.filename)
-            if content_type:
-                content_settings = ContentSettings(content_type=content_type)
-        return content_settings
 
     def _upload_to_libcloud(self, id):
         """
@@ -642,59 +567,6 @@ class ResourceCloudStorage(CloudStorage):
             # for it to not yet exist in a committed state due to an
             # outstanding lease.
             return
-
-    def _generate_azure_url(self, path):
-        """
-        Generates a signed URL for an Azure Blob Storage object.
-
-        This method creates a URL with a Shared Access Signature (SAS) for
-        secure access to a blob in Azure Blob Storage. The SAS is set to expire
-        in 1 hour and grants read-only access to the blob.
-
-        :param path: The path to the blob within the Azure container.
-        :return: A string representing the SAS URL to the Azure blob.
-        """
-        from azure.storage import blob as azure_blob
-
-        blob_service = azure_blob.BlockBlobService(
-            self.driver_options['key'],
-            self.driver_options['secret']
-        )
-
-        return blob_service.make_blob_url(
-            container_name=self.container_name,
-            blob_name=path,
-            sas_token=blob_service.generate_blob_shared_access_signature(
-                container_name=self.container_name,
-                blob_name=path,
-                expiry=datetime.utcnow() + timedelta(hours=1),
-                permission=azure_blob.BlobPermissions.READ
-            )
-        )
-
-    def _generate_aws_url(self, path, content_type):
-        """
-        Generates a signed URL for an AWS S3 object.
-
-        This method creates a presigned URL for an object stored in Amazon S3,
-        allowing secure, temporary access. The URL expires in 1 hour and is
-        configured for HTTP GET requests. If a content type is provided, it's
-        included in the URL's headers.
-
-        :param path: The path to the object in the S3 bucket.
-        :param content_type: Optional. The MIME type of the object. Used to set
-                            the 'Content-Type' header in the generated URL.
-        :return: A string representing the presigned URL to the S3 object.
-        """
-        from boto.s3.connection import S3Connection
-        s3_connection = S3Connection(**self.driver_options)
-        generate_url_params = {"expires_in": 3600, "method": "GET",
-                            "bucket": self.container_name, "query_auth": True,
-                            "key": path}
-        if content_type:
-            generate_url_params['headers'] = {"Content-Type": content_type}
-
-        return s3_connection.generate_url(**generate_url_params)
 
     def _generate_public_google_url(self, obj, user_obj, user_email):
         """
@@ -827,9 +699,6 @@ class ResourceCloudStorage(CloudStorage):
                     container=self.container_name,
                     path=path
                 )
-            # For Azure and others, check for an 'url' property in the object's extra attributes
-            elif 'url' in obj.extra:
-                return obj.extra['url']
             # If none of the above, return None or raise an appropriate exception
             else:
                 return None  # or raise an appropriate exception
@@ -841,8 +710,7 @@ class ResourceCloudStorage(CloudStorage):
 
         .. note::
 
-            Works for Azure and any libcloud driver that implements
-            support for get_object_cdn_url (ex: AWS S3).
+            Works for Google storage.
 
         :param rid: The resource ID.
         :param filename: The resource filename.
@@ -855,11 +723,7 @@ class ResourceCloudStorage(CloudStorage):
 
         # If advanced azure features are enabled, generate a temporary
         # shared access link instead of simply redirecting to the file.
-        if self.can_use_advanced_azure and self.use_secure_urls:
-            return self._generate_azure_url(path)
-        elif self.can_use_advanced_aws and self.use_secure_urls:
-            return self._generate_aws_url(path, content_type)
-        elif self.can_use_advanced_google and self.use_secure_urls:
+        if self.can_use_advanced_google and self.use_secure_urls:
             return self._generate_google_url(path)
         else:
             return self._generate_default_url(path)
