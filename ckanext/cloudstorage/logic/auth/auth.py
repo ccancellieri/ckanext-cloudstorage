@@ -37,14 +37,14 @@ def is_admin_of_org(username, org_id):
     ''' Returns True is username is admin of an organization '''
     return users_role_for_group_or_org(username, org_id) == 'admin'
 
-def can_create_gcp_group(user):
+def can_create_ckan_org(user):
     return user.sysadmin
 
-def can_delete_gcp_group(user):
+def can_delete_ckan_org(user):
     return user.sysadmin
 
-def can_create_member_from_gcp_group(user, username, org_id):
+def can_create_member_from_ckan_org(user, username, org_id):
     return user.sysadmin or is_admin_of_org(username, org_id)
 
-def can_delete_member_from_gcp_group(user, username, org_id):
+def can_delete_member_from_ckan_org(user, username, org_id):
     return user.sysadmin or is_admin_of_org(username, org_id)
