@@ -47,7 +47,7 @@ def create_bucket(bucket_name, cloud_storage=None):
 
 
 def check_err_response_from_gcp(response, err_msg):
-    if "error" in response:
+    if not response:
         log.error("{}: {}".format(err_msg, response))
         raise Exception(response)
     return response
@@ -76,17 +76,17 @@ def add_group_iam_permissions(bucket_name, group_email):
         raise RuntimeError(
             "An error occurred getting bucket info: {}".format(e))
 
-    policy = bucket.get_iam_policy()
-    response = check_err_response_from_gcp(policy, "Error getting Iam policiy")
-    log.info("Iam policy {}".format(response))
+    policy = bucket.get_iam_policy() # set([])
+    response_policy = check_err_response_from_gcp(policy, "Error getting Iam policiy")
+    log.info("Iam policy {}".format(response_policy))
 
     viewer_role = "roles/storage.objectViewer"
     policy[viewer_role].add("group:" + group_email)
-    response = bucket.set_iam_policy(policy)
-    response = check_err_response_from_gcp(
-        response, "Error modifying bucket IAM policy")
-    log.info("Read and list permissions granted to group {} on bucket {}:  IAM Policy is now:\n{}"
-             .format(group_email, bucket_name, response.json()))
+    response_policy = bucket.set_iam_policy(policy)
+    response_policy = check_err_response_from_gcp(
+        response_policy, "Error modifying bucket IAM policy")
+    log.info("Read and list permissions granted to group {} on bucket {}"
+             .format(group_email, bucket_name))
 
 
 def upload_to_gcp_bucket(
