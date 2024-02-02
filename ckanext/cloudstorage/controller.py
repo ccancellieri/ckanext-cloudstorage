@@ -1,21 +1,50 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os.path
+import mimetypes
+import logging
 
 from pylons import c
+from pylons import config
 from pylons.i18n import _
+import paste.fileapp
 
 from ckan.common import request, response
 from ckan import logic, model
 from ckan.lib import base, uploader
 import ckan.lib.helpers as h
 
+
 import ckanext.cloudstorage.storage as _storage
+
+
+log = logging.getLogger(__name__)
+
 storage = _storage.CloudStorage
 is_proxy_download=storage.proxy_download.fget(storage)
 
+TRANSITION = bool(config['ckanext.cloudstorage.transition'])
+
 class StorageController(base.BaseController):
+
     def resource_download(self, id, resource_id, filename=None):
+        if TRANSITION:
+            try:
+                # Your override logic here
+                # If this part fails, catch the failure and fall back to the default method
+                log.info("Transition enabled, downloading resource {} from bucket".format(resource_id))
+                self.resource_download_from_bucket(id, resource_id, filename)
+            except Exception as e:  # Be more specific with your exception handling
+                # Log the error or handle it as necessary
+                log.warning("Transition enabled, attempting to download reource {} from the disk after failing from bucket: {}".format(resource_id,e))
+                # Fall back to the default behavior
+                return self.resource_download_from_disk(id, resource_id, filename)
+        else:
+            # If transition is not enabled, directly use the original method
+            log.info("Transition disabled, downloading resource {} from bucket".format(resource_id))
+            return self.resource_download_from_bucket(id, resource_id, filename)
+
+    def resource_download_from_bucket(self, id, resource_id, filename=None):
         context = {
             'model': model,
             'session': model.Session,
@@ -71,8 +100,12 @@ class StorageController(base.BaseController):
             # return stream back
             return upload.get_object_as_stream(obj)
 
-        uploaded_url = upload.get_url_from_filename(resource['id'], filename,
+        try:
+            uploaded_url = upload.get_url_from_filename(resource['id'], filename,
                                                             content_type=content_type)
+        except Exception as e:
+            log.error(e)
+            base.abort(404, _('No download is available'))
         
         # The uploaded file is missing for some reason, such as the
         # provider being down.
@@ -80,3 +113,36 @@ class StorageController(base.BaseController):
             base.abort(404, _('No download is available'))
 
         h.redirect_to(uploaded_url)
+
+    def resource_download_from_disk(self, id, resource_id, filename=None):
+        """
+        Provides a direct download by either redirecting the user to the url
+        stored or downloading an uploaded file directly.
+        """
+        context = {'model': model, 'session': model.Session,
+                   'user': c.user, 'auth_user_obj': c.userobj}
+
+        try:
+            rsc = logic.get_action('resource_show')(context, {'id': resource_id})
+            logic.get_action('package_show')(context, {'id': id})
+        except (logic.NotFound, logic.NotAuthorized):
+            base.abort(404, _('Resource not found'))
+
+        if rsc.get('url_type') == 'upload':
+            upload = uploader.get_resource_uploader(rsc)
+            filepath = upload.get_path(rsc['id'])
+            fileapp = paste.fileapp.FileApp(filepath)
+            try:
+                status, headers, app_iter = request.call_application(fileapp)
+            except OSError:
+                base.abort(404, _('Resource data not found'))
+            response.headers.update(dict(headers))
+            content_type, content_enc = mimetypes.guess_type(
+                rsc.get('url', ''))
+            if content_type:
+                response.headers['Content-Type'] = content_type
+            response.status = status
+            return app_iter
+        elif 'url' not in rsc:
+            base.abort(404, _('No download is available'))
+        h.redirect_to(rsc['url'])

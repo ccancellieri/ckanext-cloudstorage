@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import cgi
 import mimetypes
+import magic
 import os.path
 import urlparse
 from ast import literal_eval
@@ -10,6 +11,7 @@ from tempfile import SpooledTemporaryFile
 import logging
 
 from pylons import config
+from pylons.i18n import _
 from ckan import model
 from ckan.lib import munge
 import ckan.plugins as p
@@ -17,6 +19,7 @@ import ckan.model as model
 from ckan.plugins import toolkit
 import ckan.authz as authz
 import ckan.logic as logic
+from ckan.lib import base
 
 from libcloud.storage.types import Provider, ObjectDoesNotExistError
 from libcloud.storage.providers import get_driver
@@ -26,6 +29,7 @@ from werkzeug.datastructures import FileStorage as FlaskFileStorage
 ALLOWED_UPLOAD_TYPES = (cgi.FieldStorage, FlaskFileStorage)
 
 NotAuthorized = logic.NotAuthorized
+MB = 1 << 20
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +37,20 @@ def _get_underlying_file(wrapper):
     if isinstance(wrapper, FlaskFileStorage):
         return wrapper.stream
     return wrapper.file
+
+def _copy_file(input_file, output_file, max_size):
+    input_file.seek(0)
+    current_size = 0
+    while True:
+        current_size = current_size + 1
+        # MB chunks
+        data = input_file.read(MB)
+
+        if not data:
+            break
+        output_file.write(data)
+        if current_size > max_size:
+            raise logic.ValidationError({'upload': ['File upload too large']})
 
 
 class CloudStorage(object):
@@ -150,7 +168,25 @@ class CloudStorage(object):
         return p.toolkit.asbool(
             config.get('ckanext.cloudstorage.guess_mimetype', False)
         )
-    
+        
+    @property
+    def transition(self):
+        """
+        `True` if ckanext-cloudstorage is configured to guess mime types,
+        `False` otherwise.
+        """
+        return p.toolkit.asbool(
+            config.get('ckanext.cloudstorage.transition', False)
+        )
+
+    @property
+    def storage_path(self):
+        """
+        `True` if ckanext-cloudstorage is configured to guess mime types,
+        `False` otherwise.
+        """
+        return config['ckan.storage_path']
+
     @property
     def proxy_download(self):
         """
@@ -189,46 +225,6 @@ class CloudStorage(object):
         return False
 
 
-    @property
-    def can_use_advanced_azure(self):
-        """
-        `True` if the `azure-storage` module is installed and
-        ckanext-cloudstorage has been configured to use Azure, otherwise
-        `False`.
-        """
-        # Are we even using Azure?
-        if self.driver_name == 'AZURE_BLOBS':
-            try:
-                # Yes? Is the azure-storage package available?
-                from azure import storage
-                # Shut the linter up.
-                assert storage
-                return True
-            except ImportError:
-                pass
-
-        return False
-
-    @property
-    def can_use_advanced_aws(self):
-        """
-        `True` if the `boto` module is installed and ckanext-cloudstorage has
-        been configured to use Amazon S3, otherwise `False`.
-        """
-        # Are we even using AWS?
-        if 'S3' in self.driver_name:
-            try:
-                # Yes? Is the boto package available?
-                import boto
-                # Shut the linter up.
-                assert boto
-                return True
-            except ImportError:
-                pass
-
-        return False
-
-
 class ResourceCloudStorage(CloudStorage):
     def __init__(self, resource):
             """
@@ -244,6 +240,7 @@ class ResourceCloudStorage(CloudStorage):
             self.filename = None
             self.old_filename = None
             self.file_upload = None
+            self.mimetype = None
 
             self._initialize_storage_settings()
             self._handle_file_upload(resource)
@@ -255,6 +252,7 @@ class ResourceCloudStorage(CloudStorage):
         """
         self.role = str(self.get_user_role_in_organization()).encode('ascii', 'ignore')
         self.container_name = self.get_container_name_of_current_org()
+        self.bucket_exist = self.check_bucket_exists(self.container_name)
         self.group_email = self.container_name + "@" + self.domain
 
     def _handle_file_upload(self, resource):
@@ -265,12 +263,19 @@ class ResourceCloudStorage(CloudStorage):
         upload_field_storage = resource.pop('upload', None)
         multipart_name = resource.pop('multipart_name', None)
 
-        if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
-            self._process_file_upload(upload_field_storage, resource)
-        elif multipart_name and self.can_use_advanced_aws:
-            self._process_multipart_upload(multipart_name, resource)
-
-        log.info("File upload handled successfully for resource: %s", resource)
+        if self.transition:
+            if self.bucket_exist:
+                if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
+                    self._process_file_upload(upload_field_storage, resource)
+                elif multipart_name and self.can_use_advanced_aws:
+                    self._process_multipart_upload(multipart_name, resource)
+            else:
+                self._process_file_upload_to_disk(upload_field_storage, resource)
+        else:
+            if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
+                self._process_file_upload(upload_field_storage, resource)
+            elif multipart_name and self.can_use_advanced_aws:
+                self._process_multipart_upload(multipart_name, resource)
 
     def _process_file_upload(self, upload_field_storage, resource):
         """
@@ -282,6 +287,47 @@ class ResourceCloudStorage(CloudStorage):
         resource['url'] = self.filename
         resource['url_type'] = 'upload'
         log.info("File uploaded successfully: %s", self.filename)
+
+    def _process_file_upload_to_disk(self, upload_field_storage, resource):
+        """
+        Process a standard file upload to disk.
+        """
+        from ckan.common import config
+        
+        config_mimetype_guess = config.get('ckan.mimetype_guess', 'file_ext')
+        
+        log.info("Processing file upload: %s", upload_field_storage.filename)
+
+        if config_mimetype_guess == 'file_ext':
+            url = resource.get('url')
+            self.mimetype = mimetypes.guess_type(url)[0]
+
+        if isinstance(upload_field_storage, ALLOWED_UPLOAD_TYPES):
+            self.filesize = 0  # bytes
+
+            self.filename = upload_field_storage.filename
+            self.filename = munge.munge_filename(self.filename)
+            resource['url'] = self.filename
+            resource['url_type'] = 'upload'
+            resource['last_modified'] = datetime.utcnow()
+            self.file_upload = _get_underlying_file(upload_field_storage)
+            self.file_upload.seek(0, os.SEEK_END)
+            self.filesize = self.file_upload.tell()
+            # go back to the beginning of the file buffer
+            self.file_upload.seek(0, os.SEEK_SET)
+
+            # check if the mimetype failed from guessing with the url
+            if not self.mimetype and config_mimetype_guess == 'file_ext':
+                self.mimetype = mimetypes.guess_type(self.filename)[0]
+
+            if not self.mimetype and config_mimetype_guess == 'file_contents':
+                try:
+                    self.mimetype = magic.from_buffer(self.file_upload.read(),
+                                                      mime=True)
+                    self.file_upload.seek(0, os.SEEK_SET)
+                except IOError as e:
+                    # Not that important if call above fails
+                    self.mimetype = None
 
     def _process_multipart_upload(self, multipart_name, resource):
         """
@@ -334,7 +380,33 @@ class ResourceCloudStorage(CloudStorage):
             rid,
             munge.munge_filename(filename)
         )
-    
+
+    def check_bucket_exists(self, bucket_name):
+        """Check if a GCP bucket exists.
+
+        Args:
+            bucket_name (str): The name of the bucket to check.
+
+        Returns:
+            bool: True if the bucket exists, False otherwise.
+        """
+        from google.cloud import storage
+        from google.cloud.exceptions import NotFound
+
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.driver_options["secret"]
+
+        storage_client = storage.Client()
+        try:
+            storage_client.get_bucket(bucket_name)
+            log.info("Bucket {} exists".format(bucket_name))
+            return True
+        except NotFound as e:
+            log.warning("Bucket {} does not exist: {}".format(bucket_name, e))
+            return False
+        except Exception as e:
+            log.error("An error occurred: {}".format(e))
+            return False
+
     def get_container_name_of_current_org(self):
         """
         Generates the container name for the current organization.
@@ -399,46 +471,54 @@ class ResourceCloudStorage(CloudStorage):
 
         :param id: The resource_id.
         """
-        if self.can_use_advanced_azure:
-            self._upload_to_azure(id)
+        if self.transition:
+            if self.bucket_exist:
+                self._upload_to_libcloud(id)
+            else:
+                self._upload_to_disk(id)
         else:
             self._upload_to_libcloud(id)
 
-    def _upload_to_azure(self, id):
-        """
-        Uploads a file to Azure blob storage.
+    def _upload_to_disk(self, id, max_size=10):
+        '''Actually upload the file.
 
-        This method uploads the file associated with the given resource ID
-        to Azure Blob Storage, using the configured container and filename.
-        It handles content settings for the file based on its MIME type.
+        :returns: ``'file uploaded'`` if a new file was successfully uploaded
+            (whether it overwrote a previously uploaded file or not),
+            ``'file deleted'`` if an existing uploaded file was deleted,
+            or ``None`` if nothing changed
+        :rtype: ``string`` or ``None``
 
-        :param id: The resource_id associated with the file to be uploaded.
-        :return: The response from the Azure blob service after upload.
-        """
-        from azure.storage import blob as azure_blob
+        '''
+        if not self.storage_path:
+            return
 
-        blob_service = azure_blob.BlockBlobService(**self.driver_options)
-        content_settings = self._get_content_settings_for_azure()
+        # Get directory and filepath on the system
+        # where the file for this resource will be stored
+        directory = self.get_directory(id)
+        filepath = self.get_path(id)
 
-        return blob_service.create_blob_from_stream(
-            container_name=self.container_name,
-            blob_name=self.path_from_filename(id, self.filename),
-            stream=self.file_upload,
-            content_settings=content_settings
-        )
-
-    def _get_content_settings_for_azure(self):
-        """
-        Determines the content settings for Azure based on the file's mimetype.
-        """
-        from azure.storage.blob.models import ContentSettings
-
-        content_settings = None
-        if self.guess_mimetype:
-            content_type, _ = mimetypes.guess_type(self.filename)
-            if content_type:
-                content_settings = ContentSettings(content_type=content_type)
-        return content_settings
+        # If a filename has been provided (a file is being uploaded)
+        # we write it to the filepath (and overwrite it if it already
+        # exists). This way the uploaded file will always be stored
+        # in the same location
+        if self.filename:
+            try:
+                os.makedirs(directory)
+            except OSError as e:
+                # errno 17 is file already exists
+                if e.errno != 17:
+                    raise
+            tmp_filepath = filepath + '~'
+            with open(tmp_filepath, 'wb+') as output_file:
+                try:
+                    _copy_file(self.file_upload, output_file, max_size)
+                except logic.ValidationError:
+                    os.remove(tmp_filepath)
+                    raise
+                finally:
+                    self.file_upload.close()
+            os.rename(tmp_filepath, filepath)
+            return
 
     def _upload_to_libcloud(self, id):
         """
@@ -455,10 +535,14 @@ class ResourceCloudStorage(CloudStorage):
         if isinstance(self.file_upload, SpooledTemporaryFile):
             self.file_upload.next = self.file_upload.next()
 
-        self.container.upload_object_via_stream(
-            self.file_upload,
-            object_name=self.path_from_filename(id, self.filename)
-        )
+        try:
+            self.container.upload_object_via_stream(
+                self.file_upload,
+                object_name=self.path_from_filename(id, self.filename)
+            )
+        except Exception as e:
+            log.error(e)
+            base.abort(404, _('Bucket {} not found'.format(self.container_name)))
 
     def _delete_old_file(self, id):
         """
@@ -486,59 +570,6 @@ class ResourceCloudStorage(CloudStorage):
             # for it to not yet exist in a committed state due to an
             # outstanding lease.
             return
-
-    def _generate_azure_url(self, path):
-        """
-        Generates a signed URL for an Azure Blob Storage object.
-
-        This method creates a URL with a Shared Access Signature (SAS) for
-        secure access to a blob in Azure Blob Storage. The SAS is set to expire
-        in 1 hour and grants read-only access to the blob.
-
-        :param path: The path to the blob within the Azure container.
-        :return: A string representing the SAS URL to the Azure blob.
-        """
-        from azure.storage import blob as azure_blob
-
-        blob_service = azure_blob.BlockBlobService(
-            self.driver_options['key'],
-            self.driver_options['secret']
-        )
-
-        return blob_service.make_blob_url(
-            container_name=self.container_name,
-            blob_name=path,
-            sas_token=blob_service.generate_blob_shared_access_signature(
-                container_name=self.container_name,
-                blob_name=path,
-                expiry=datetime.utcnow() + timedelta(hours=1),
-                permission=azure_blob.BlobPermissions.READ
-            )
-        )
-
-    def _generate_aws_url(self, path, content_type):
-        """
-        Generates a signed URL for an AWS S3 object.
-
-        This method creates a presigned URL for an object stored in Amazon S3,
-        allowing secure, temporary access. The URL expires in 1 hour and is
-        configured for HTTP GET requests. If a content type is provided, it's
-        included in the URL's headers.
-
-        :param path: The path to the object in the S3 bucket.
-        :param content_type: Optional. The MIME type of the object. Used to set
-                            the 'Content-Type' header in the generated URL.
-        :return: A string representing the presigned URL to the S3 object.
-        """
-        from boto.s3.connection import S3Connection
-        s3_connection = S3Connection(**self.driver_options)
-        generate_url_params = {"expires_in": 3600, "method": "GET",
-                            "bucket": self.container_name, "query_auth": True,
-                            "key": path}
-        if content_type:
-            generate_url_params['headers'] = {"Content-Type": content_type}
-
-        return s3_connection.generate_url(**generate_url_params)
 
     def _generate_public_google_url(self, obj, user_obj, user_email):
         """
@@ -671,9 +702,6 @@ class ResourceCloudStorage(CloudStorage):
                     container=self.container_name,
                     path=path
                 )
-            # For Azure and others, check for an 'url' property in the object's extra attributes
-            elif 'url' in obj.extra:
-                return obj.extra['url']
             # If none of the above, return None or raise an appropriate exception
             else:
                 return None  # or raise an appropriate exception
@@ -685,8 +713,7 @@ class ResourceCloudStorage(CloudStorage):
 
         .. note::
 
-            Works for Azure and any libcloud driver that implements
-            support for get_object_cdn_url (ex: AWS S3).
+            Works for Google storage.
 
         :param rid: The resource ID.
         :param filename: The resource filename.
@@ -699,11 +726,7 @@ class ResourceCloudStorage(CloudStorage):
 
         # If advanced azure features are enabled, generate a temporary
         # shared access link instead of simply redirecting to the file.
-        if self.can_use_advanced_azure and self.use_secure_urls:
-            return self._generate_azure_url(path)
-        elif self.can_use_advanced_aws and self.use_secure_urls:
-            return self._generate_aws_url(path, content_type)
-        elif self.can_use_advanced_google and self.use_secure_urls:
+        if self.can_use_advanced_google and self.use_secure_urls:
             return self._generate_google_url(path)
         else:
             return self._generate_default_url(path)
@@ -720,3 +743,19 @@ class ResourceCloudStorage(CloudStorage):
     @property
     def package(self):
         return model.Package.get(self.resource['package_id'])
+
+    def get_directory(self, id):
+        directory = ""
+        if "resources" in self.storage_path:
+            directory = os.path.join(self.storage_path,
+                                 id[0:3], id[3:6])
+        else:
+            storage_path = os.path.join(self.storage_path, "resources")
+            directory = os.path.join(storage_path,
+                                 id[0:3], id[3:6])
+        return directory
+
+    def get_path(self, id):
+        directory = self.get_directory(id)
+        filepath = os.path.join(directory, id[6:])
+        return filepath
