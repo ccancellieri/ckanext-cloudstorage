@@ -11,6 +11,7 @@ from tempfile import SpooledTemporaryFile
 import logging
 
 from pylons import config
+from pylons.i18n import _
 from ckan import model
 from ckan.lib import munge
 import ckan.plugins as p
@@ -18,6 +19,7 @@ import ckan.model as model
 from ckan.plugins import toolkit
 import ckan.authz as authz
 import ckan.logic as logic
+from ckan.lib import base
 
 from libcloud.storage.types import Provider, ObjectDoesNotExistError
 from libcloud.storage.providers import get_driver
@@ -275,9 +277,6 @@ class ResourceCloudStorage(CloudStorage):
             elif multipart_name and self.can_use_advanced_aws:
                 self._process_multipart_upload(multipart_name, resource)
 
-
-        log.info("File upload handled successfully for resource: %s", resource)
-
     def _process_file_upload(self, upload_field_storage, resource):
         """
         Process a standard file upload.
@@ -393,7 +392,7 @@ class ResourceCloudStorage(CloudStorage):
         """
         from google.cloud import storage
         from google.cloud.exceptions import NotFound
-        
+
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.driver_options["secret"]
 
         storage_client = storage.Client()
@@ -407,7 +406,7 @@ class ResourceCloudStorage(CloudStorage):
         except Exception as e:
             log.error("An error occurred: {}".format(e))
             return False
-    
+
     def get_container_name_of_current_org(self):
         """
         Generates the container name for the current organization.
@@ -536,10 +535,14 @@ class ResourceCloudStorage(CloudStorage):
         if isinstance(self.file_upload, SpooledTemporaryFile):
             self.file_upload.next = self.file_upload.next()
 
-        self.container.upload_object_via_stream(
-            self.file_upload,
-            object_name=self.path_from_filename(id, self.filename)
-        )
+        try:
+            self.container.upload_object_via_stream(
+                self.file_upload,
+                object_name=self.path_from_filename(id, self.filename)
+            )
+        except Exception as e:
+            log.error(e)
+            base.abort(404, _('Bucket {} not found'.format(self.container_name)))
 
     def _delete_old_file(self, id):
         """
