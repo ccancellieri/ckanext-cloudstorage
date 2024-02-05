@@ -233,7 +233,6 @@ class ResourceCloudStorage(CloudStorage):
 
             :param resource: The resource dict.
             """
-            log.info("Initializing ResourceCloudStorage with resource: %s", resource)
             super(ResourceCloudStorage, self).__init__()
 
             self.resource = resource
@@ -259,7 +258,6 @@ class ResourceCloudStorage(CloudStorage):
         """
         Handle the file upload process.
         """
-        log.info("Handling file upload for resource: %s", resource)
         upload_field_storage = resource.pop('upload', None)
         multipart_name = resource.pop('multipart_name', None)
 
@@ -267,15 +265,12 @@ class ResourceCloudStorage(CloudStorage):
             if self.bucket_exist:
                 if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
                     self._process_file_upload(upload_field_storage, resource)
-                elif multipart_name and self.can_use_advanced_aws:
-                    self._process_multipart_upload(multipart_name, resource)
             else:
-                self._process_file_upload_to_disk(upload_field_storage, resource)
+                if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
+                    self._process_file_upload_to_disk(upload_field_storage, resource)
         else:
             if isinstance(upload_field_storage, (ALLOWED_UPLOAD_TYPES)):
                 self._process_file_upload(upload_field_storage, resource)
-            elif multipart_name and self.can_use_advanced_aws:
-                self._process_multipart_upload(multipart_name, resource)
 
     def _process_file_upload(self, upload_field_storage, resource):
         """
@@ -296,38 +291,37 @@ class ResourceCloudStorage(CloudStorage):
         
         config_mimetype_guess = config.get('ckan.mimetype_guess', 'file_ext')
         
-        log.info("Processing file upload: %s", upload_field_storage.filename)
+        log.info("Processing file: %s", upload_field_storage.filename)
 
         if config_mimetype_guess == 'file_ext':
             url = resource.get('url')
             self.mimetype = mimetypes.guess_type(url)[0]
 
-        if isinstance(upload_field_storage, ALLOWED_UPLOAD_TYPES):
-            self.filesize = 0  # bytes
+        self.filesize = 0  # bytes
 
-            self.filename = upload_field_storage.filename
-            self.filename = munge.munge_filename(self.filename)
-            resource['url'] = self.filename
-            resource['url_type'] = 'upload'
-            resource['last_modified'] = datetime.utcnow()
-            self.file_upload = _get_underlying_file(upload_field_storage)
-            self.file_upload.seek(0, os.SEEK_END)
-            self.filesize = self.file_upload.tell()
-            # go back to the beginning of the file buffer
-            self.file_upload.seek(0, os.SEEK_SET)
+        self.filename = upload_field_storage.filename
+        self.filename = munge.munge_filename(self.filename)
+        resource['url'] = self.filename
+        resource['url_type'] = 'upload'
+        resource['last_modified'] = datetime.utcnow()
+        self.file_upload = _get_underlying_file(upload_field_storage)
+        self.file_upload.seek(0, os.SEEK_END)
+        self.filesize = self.file_upload.tell()
+        # go back to the beginning of the file buffer
+        self.file_upload.seek(0, os.SEEK_SET)
 
-            # check if the mimetype failed from guessing with the url
-            if not self.mimetype and config_mimetype_guess == 'file_ext':
-                self.mimetype = mimetypes.guess_type(self.filename)[0]
+        # check if the mimetype failed from guessing with the url
+        if not self.mimetype and config_mimetype_guess == 'file_ext':
+            self.mimetype = mimetypes.guess_type(self.filename)[0]
 
-            if not self.mimetype and config_mimetype_guess == 'file_contents':
-                try:
-                    self.mimetype = magic.from_buffer(self.file_upload.read(),
-                                                      mime=True)
-                    self.file_upload.seek(0, os.SEEK_SET)
-                except IOError as e:
-                    # Not that important if call above fails
-                    self.mimetype = None
+        if not self.mimetype and config_mimetype_guess == 'file_contents':
+            try:
+                self.mimetype = magic.from_buffer(self.file_upload.read(),
+                                                    mime=True)
+                self.file_upload.seek(0, os.SEEK_SET)
+            except IOError as e:
+                # Not that important if call above fails
+                self.mimetype = None
 
     def _process_multipart_upload(self, multipart_name, resource):
         """

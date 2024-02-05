@@ -3,9 +3,12 @@
 import os.path
 import mimetypes
 import logging
+import ast
 
 from pylons import c
 from pylons import config
+from webob.exc import HTTPFound
+
 from pylons.i18n import _
 import paste.fileapp
 
@@ -23,7 +26,8 @@ log = logging.getLogger(__name__)
 storage = _storage.CloudStorage
 is_proxy_download=storage.proxy_download.fget(storage)
 
-TRANSITION = bool(config['ckanext.cloudstorage.transition'])
+
+TRANSITION = ast.literal_eval(config['ckanext.cloudstorage.transition'])
 
 class StorageController(base.BaseController):
 
@@ -33,7 +37,10 @@ class StorageController(base.BaseController):
                 # Your override logic here
                 # If this part fails, catch the failure and fall back to the default method
                 log.info("Transition enabled, downloading resource {} from bucket".format(resource_id))
-                self.resource_download_from_bucket(id, resource_id, filename)
+                return self.resource_download_from_bucket(id, resource_id, filename)
+            except HTTPFound as e:
+                # This is the redirect exception; re-raise it to allow the redirect to proceed.
+                raise e
             except Exception as e:  # Be more specific with your exception handling
                 # Log the error or handle it as necessary
                 log.warning("Transition enabled, attempting to download reource {} from the disk after failing from bucket: {}".format(resource_id,e))
@@ -100,12 +107,8 @@ class StorageController(base.BaseController):
             # return stream back
             return upload.get_object_as_stream(obj)
 
-        try:
-            uploaded_url = upload.get_url_from_filename(resource['id'], filename,
+        uploaded_url = upload.get_url_from_filename(resource['id'], filename,
                                                             content_type=content_type)
-        except Exception as e:
-            log.error(e)
-            base.abort(404, _('No download is available'))
         
         # The uploaded file is missing for some reason, such as the
         # provider being down.
