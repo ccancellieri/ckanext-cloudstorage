@@ -71,7 +71,7 @@ class GetGroupMembersCommand(Command):
             response.raise_for_status()  # Raises an HTTPError for bad responses
             return {"success": True, "response": response.json()}
         except Exception as e:
-            if response.json()[u"status"] == 404:
+            if response.json()[u"status"] == 403:
                 log.warning("Group members not found: {}".format(e))
                 return {"success": True, "response": response.json()}
             log.error("Unexpected Error retrieving group memebers: {}".format(e))

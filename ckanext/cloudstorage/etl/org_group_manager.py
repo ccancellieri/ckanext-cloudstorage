@@ -57,7 +57,7 @@ class OrganizationGroupManager:
                 if get_group_response["success"] == True:
                     if get_group_response[u"response"][u"status"] == 200:
                         log.warning("Group <{}> already exists.".format(group_name))
-                    elif get_group_response[u"response"][u"status"] == 404:
+                    elif get_group_response[u"response"][u"status"] == 403:
                         log.info("Group <{}>  does not exist yet.".format(group_name))
                         self.create_group(payload)
                     else:
