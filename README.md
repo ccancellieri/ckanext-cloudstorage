@@ -1,6 +1,6 @@
 # ckanext-cloudstorage
 
-`ckanext-cloudstorage` is a plugin for CKAN that enhances its capabilities by enabling the use of various cloud storage services. It supports integration with over 15 different storage providers, including Amazon S3, Google Cloud Storage, and Azure, via [libcloud][]. This flexibility allows CKAN[CKAN][] to leverage the robustness and scalability of these cloud storage solutions
+[`ckanext-cloudstorage`](documentation.md)  is a plugin for CKAN that enhances its capabilities by enabling the use of various cloud storage services. It supports integration with over 15 different storage providers, including Amazon S3, Google Cloud Storage, and Azure, via [libcloud][]. This flexibility allows CKAN[CKAN][] to leverage the robustness and scalability of these cloud storage solutions. For more information please check this [`documentaion`](documentation.md).
 
 ## Features
 
