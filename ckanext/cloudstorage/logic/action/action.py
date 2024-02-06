@@ -4,6 +4,7 @@ import os
 import ckan.plugins as plugins
 import ckan.logic as logic
 from pylons import config
+from ckan.lib.base import abort
 
 from ckanext.cloudstorage.logic.auth.auth import can_create_ckan_org
 from ckanext.cloudstorage.logic.auth.auth import can_delete_ckan_org
@@ -101,7 +102,10 @@ def organization_create(next_auth, context, data_dict):
     }
     cloud_storage = CloudStorage()
     create_group = CreateGroupsCommand(auth_session, url, payload, cloud_storage)
-    create_group.execute()
+    try:
+        create_group.execute()
+    except Exception as e:
+        abort(400, "error: {}".format(e))
     log.info("GCP group %s created successfully.", group_email)
 
     # Add sysadmin user as owner of gcp group
