@@ -114,3 +114,53 @@ This synchronization between CKAN organization roles and GCP workspace group rol
 
 By automatically updating GCP workspace group memberships and roles based on changes within the CKAN organization, organizations can manage their cloud resources with confidence, knowing that access is restricted to authorized users with appropriate roles.
 
+
+## CKAN Organization Deletion and GCP Integration
+
+The deletion of a CKAN organization triggers a specific sequence of actions within the integrated Google Cloud Platform (GCP) environment, focusing on the cleanup of workspace groups while preserving cloud storage resources.
+
+### Workspace Group Deletion
+
+- Upon the deletion of a CKAN organization, the associated GCP workspace group is automatically deleted. This action ensures that access to GCP resources tied to the organization is revoked, aligning with the organization's removal.
+  - **Important Note:** The deletion targets only the GCP workspace group. This is a critical step in removing access control structures that are no longer necessary, reflecting the organization's cessation.
+
+### Bucket Preservation
+
+- Contrary to the workspace group, the Google Cloud Storage (GCS) bucket linked to the CKAN organization remains untouched. This policy is designed to prevent accidental data loss, ensuring that valuable organizational data stored in the bucket is not automatically deleted along with the organization.
+  - **Data Management:** The preservation of the GCS bucket post-organization deletion necessitates manual intervention for data review or cleanup. It allows administrators to securely manage or migrate data according to their needs without the risk of immediate data erasure.
+
+### Implications of Organization Deletion
+
+This approach to handling the deletion of CKAN organizations within the GCP integration framework emphasizes data protection and cautious access management. By automatically removing the workspace group while retaining the storage bucket, it balances the need for security with the avoidance of unintended data loss. Administrators are thus encouraged to manually assess and manage the contents of the GCS bucket following an organization's deletion, ensuring data is handled appropriately.
+
+The deletion protocol underscores the importance of deliberate data management practices, allowing for a controlled and secure closure of CKAN organizations within the cloud environment.
+
+## GCP Integration with CKAN for Enhanced Metadata Management
+
+This documentation details the integration between CKAN and Google Cloud Platform (GCP), specifically focusing on the creation of buckets and the metadata management of files uploaded within CKAN organizations.
+
+### Metadata for Bucket Creation
+
+Upon the establishment of a new CKAN organization, a dedicated bucket is automatically generated in GCP. This bucket is tagged with specific metadata attributes to ensure a clear linkage and management of organizational data. The metadata includes:
+
+- `organization_id`: A unique identifier assigned to the CKAN organization.
+- `organization_name`: The official name of the CKAN organization.
+- `owner`: The email address of the sysadmin who initiated the creation of the organization.
+
+This metadata is crucial for associating each bucket with its corresponding CKAN organization and the admin responsible, thereby simplifying the management process within GCP.
+
+### Metadata for File Uploads
+
+When a user uploads a file to a CKAN organization, and a related bucket is available, the file is stored with detailed metadata. This information not only contextualizes the file within the CKAN framework but also facilitates its lifecycle management. The metadata recorded with each file includes:
+
+- `activate`: This boolean attribute indicates whether the file is active (true) or has been marked as deleted within CKAN (false). If a file is removed from CKAN and the setting `ckanext.cloudstorage.leave_files` is set to `true`, this flag will reflect the file's deactivation by switching to false.
+- `organization_id`: Identifies the CKAN organization where the file is uploaded.
+- `package_id`: The identifier for the specific package (dataset) the file is part of.
+- `resource_id`: A unique identifier for the resource (file) itself.
+- `owner`: The name or email of the user who uploaded the file.
+
+This metadata schema is designed to ensure that each file's association with its respective organization, dataset, and uploader is meticulously recorded. Moreover, the inclusion of the `activate` field allows for nuanced file lifecycle management, accommodating scenarios where files are removed from CKAN but not necessarily from the storage backend, based on the configured preferences.
+
+---
+
+These guidelines aim to provide a clear understanding of the procedures and metadata considerations involved in managing data storage and organization through CKAN's integration with GCP.
