@@ -45,6 +45,19 @@ def create_bucket(bucket_name, cloud_storage=None):
         log.error("Error creating bucket: {}".format(e))
         raise BucketError("Error creating bucket: {}".format(e))
 
+def update_bucket_labels(bucket_name, labels):
+    """Update labels of a Google Cloud Storage bucket with error handling."""
+    try:
+        storage_client = storage.Client()
+        bucket = storage_client.get_bucket(bucket_name)
+
+        bucket.labels = labels
+        bucket.patch()
+
+        log.info("Updated labels for bucket {}.".format(bucket_name))
+    except Exception as e:
+        log.error("Failed to update labels for bucket {}: {}".format(bucket_name, e))
+
 
 def check_err_response_from_gcp(response, err_msg):
     if not response:
