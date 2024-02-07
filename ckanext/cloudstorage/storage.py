@@ -155,7 +155,7 @@ class CloudStorage(object):
         otherwise `False`.
         """
         return p.toolkit.asbool(
-            config.get('ckanext.cloudstorage.leave_files', True)
+            config.get('ckanext.cloudstorage.leave_files', False)
         )
 
 

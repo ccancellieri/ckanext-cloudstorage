@@ -16,6 +16,7 @@ from ckanext.cloudstorage.group_service import AddMemberGroupCommand
 from ckanext.cloudstorage.group_service import UpdateMemberGroupCommand
 from ckanext.cloudstorage.group_service import GetMemberGroupCommand
 from ckanext.cloudstorage.group_service import DeleteMemberGroupCommand
+from ckanext.cloudstorage.bucket import update_bucket_labels
 from ckanext.cloudstorage.storage import CloudStorage
 from ckanext.cloudstorage.authorization import create_id_token_and_auth_session
 from ckan.common import _, request
@@ -102,8 +103,13 @@ def organization_create(next_auth, context, data_dict):
     }
     cloud_storage = CloudStorage()
     create_group = CreateGroupsCommand(auth_session, url, payload, cloud_storage)
+    labels = {
+        "organization_name": name,
+        "owner": username
+    }
     try:
         create_group.execute()
+        update_bucket_labels(group_name, labels)
     except Exception as e:
         abort(400, "error: {}".format(e))
     log.info("GCP group %s created successfully.", group_email)
