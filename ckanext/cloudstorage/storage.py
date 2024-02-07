@@ -155,7 +155,7 @@ class CloudStorage(object):
         otherwise `False`.
         """
         return p.toolkit.asbool(
-            config.get('ckanext.cloudstorage.leave_files', False)
+            config.get('ckanext.cloudstorage.leave_files', True)
         )
 
 
@@ -240,6 +240,7 @@ class ResourceCloudStorage(CloudStorage):
             self.old_filename = None
             self.file_upload = None
             self.mimetype = None
+            self.activate = True
 
             self._initialize_storage_settings()
             self._handle_file_upload(resource)
@@ -458,6 +459,18 @@ class ResourceCloudStorage(CloudStorage):
             self._upload_file(id)
         elif self._clear and self.old_filename and not self.leave_files:
             self._delete_old_file(id)
+        elif self._clear and self.old_filename and self.leave_files:
+            self.activate = False
+            org_id = str(self.package.owner_org).encode('ascii', 'ignore')
+            metadata = {
+                "activate": self.activate,
+                "organization_id": org_id,
+                "package_id": self.package.id,
+                "resource_id": id,
+                "owner": toolkit.c.user
+            }
+            path = self.path_from_filename(id, self.old_filename)
+            self._update_metadata(self.container_name, path, metadata)
 
     def _upload_file(self, id):
         """
@@ -526,13 +539,22 @@ class ResourceCloudStorage(CloudStorage):
         :param id: The resource_id associated with the file to be uploaded.
         """
         # Specific handling for SpooledTemporaryFile
+        org_id = str(self.package.owner_org).encode('ascii', 'ignore')
+        metadata = {
+            "activate": self.activate,
+            "organization_id": org_id,
+            "package_id": self.package.id,
+            "resource_id": id,
+            "owner": toolkit.c.user
+        }
         if isinstance(self.file_upload, SpooledTemporaryFile):
             self.file_upload.next = self.file_upload.next()
 
         try:
             self.container.upload_object_via_stream(
                 self.file_upload,
-                object_name=self.path_from_filename(id, self.filename)
+                object_name=self.path_from_filename(id, self.filename),
+                extra = {"meta_data": metadata}
             )
         except Exception as e:
             log.error(e)
@@ -552,6 +574,7 @@ class ResourceCloudStorage(CloudStorage):
         # This is only set when a previously-uploaded file is replace
         # by a link. We want to delete the previously-uploaded file.
         log.info("Deleting old file: %s", self.old_filename)
+
         try:
             self.container.delete_object(
                 self.container.get_object(
@@ -564,6 +587,25 @@ class ResourceCloudStorage(CloudStorage):
             # for it to not yet exist in a committed state due to an
             # outstanding lease.
             return
+
+    def _update_metadata(self, bucket_name, blob_name, new_metadata):
+        """Updates metadata for a specific object in Google Cloud Storage."""
+        from google.cloud import storage
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = self.driver_options["secret"]
+        
+        try:
+            # Initialize Google Cloud Storage client
+            storage_client = storage.Client()
+            bucket = storage_client.get_bucket(bucket_name)
+            blob = bucket.get_blob(blob_name)
+
+            # Update metadata
+            blob.metadata = new_metadata
+            blob.patch()
+
+            log.info("Updated metadata for blob {} in bucket {}.".format(blob_name, bucket_name))
+        except Exception as e:
+            log.error("Error updating metadata for blob {} in bucket {}: {}".format(blob_name, bucket_name, e))
 
     def _generate_public_google_url(self, obj, user_obj, user_email):
         """

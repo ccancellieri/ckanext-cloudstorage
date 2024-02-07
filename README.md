@@ -110,7 +110,8 @@ ckan.root_path= {ROOT_PATH}
 ckan.storage_path= {STORAGE_PATH}
 ckanext.cloudstorage.prefix= {PREFIX}
 ckanext.cloudstorage.domain= {DOMAIN}
-ckanext.cloudstorage.transition= {TRANSITION}
+ckanext.cloudstorage.transition= {TRANSITION} # ( should be `True` or `False` )
+ckanext.cloudstorage.leave_files= {leave_files} # ( should be `True` or `False` )
 ```
 
 from `ckanext-cloudstorage` folder execute this command:
